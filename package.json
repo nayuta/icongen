@@ -1,0 +1,40 @@
+{
+  "name": "icongen",
+  "version": "1.0.0",
+  "description": "Fast, dependency-free app icon generator written in Go",
+  "main": "index.js",
+  "bin": {
+    "icongen": "./icongen"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "icons",
+    "app-icons",
+    "go",
+    "png",
+    "generator",
+    "cli",
+    "fast",
+    "cross-platform"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/icongen.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "homepage": "https://github.com/yourusername/icongen#readme",
+  "files": [
+    "icongen",
+    "README.md"
+  ]
+}

@@ -1,0 +1,56 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Compiled binary
+icongen
+generate-icons
+
+# npm/node modules (if using package.json)
+node_modules/
+package-lock.json
+yarn.lock
+
+# OS specific files
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test images and output
+test_*
+sample_*
+icon_*.png
+icons/
+output/
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts
+dist/
+build/
+*.tar.gz
+*.zip
+
+# Generated output files
+generate_icons.sh
