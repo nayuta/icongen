@@ -161,8 +161,8 @@ func TestCropCenter(t *testing.T) {
 	)
 
 	tests := []struct {
-		name        string
-		percent     int
+		name         string
+		percent      int
 		expectedSize int
 	}{
 		{"80 percent crop", 80, 80},

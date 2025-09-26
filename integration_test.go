@@ -13,7 +13,7 @@ func TestFullWorkflow(t *testing.T) {
 	// Create a realistic test scenario
 	testImg := createTestImageWithBorder(
 		400,
-		color.RGBA{0, 150, 255, 255}, // blue center
+		color.RGBA{0, 150, 255, 255},   // blue center
 		color.RGBA{255, 255, 255, 255}, // white border
 		50,
 	)

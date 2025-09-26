@@ -252,17 +252,60 @@ func resizeImage(img image.Image, size int) image.Image {
 	offsetX := (size - newWidth) / 2
 	offsetY := (size - newHeight) / 2
 
-	// Simple nearest neighbor scaling
+	// Bilinear interpolation scaling for smoother results
 	for y := 0; y < newHeight; y++ {
 		for x := 0; x < newWidth; x++ {
-			srcX := int(float64(x) / scale)
-			srcY := int(float64(y) / scale)
+			// Calculate source coordinates with sub-pixel precision
+			srcXf := float64(x) / scale
+			srcYf := float64(y) / scale
+
+			// Get integer and fractional parts
+			srcX := int(srcXf)
+			srcY := int(srcYf)
+			fracX := srcXf - float64(srcX)
+			fracY := srcYf - float64(srcY)
+
+			// Adjust for bounds offset
 			srcX += bounds.Min.X
 			srcY += bounds.Min.Y
 
-			if srcX < bounds.Max.X && srcY < bounds.Max.Y {
-				pixelColor := img.At(srcX, srcY)
-				resized.Set(offsetX+x, offsetY+y, pixelColor)
+			// Ensure we don't go out of bounds
+			if srcX >= bounds.Max.X-1 {
+				srcX = bounds.Max.X - 2
+				fracX = 1.0
+			}
+			if srcY >= bounds.Max.Y-1 {
+				srcY = bounds.Max.Y - 2
+				fracY = 1.0
+			}
+
+			if srcX >= bounds.Min.X && srcY >= bounds.Min.Y {
+				// Get the four surrounding pixels
+				c00 := img.At(srcX, srcY)
+				c10 := img.At(srcX+1, srcY)
+				c01 := img.At(srcX, srcY+1)
+				c11 := img.At(srcX+1, srcY+1)
+
+				// Convert to RGBA for interpolation
+				r00, g00, b00, a00 := c00.RGBA()
+				r10, g10, b10, a10 := c10.RGBA()
+				r01, g01, b01, a01 := c01.RGBA()
+				r11, g11, b11, a11 := c11.RGBA()
+
+				// Bilinear interpolation
+				r := bilinearInterpolate(float64(r00), float64(r10), float64(r01), float64(r11), fracX, fracY)
+				g := bilinearInterpolate(float64(g00), float64(g10), float64(g01), float64(g11), fracX, fracY)
+				b := bilinearInterpolate(float64(b00), float64(b10), float64(b01), float64(b11), fracX, fracY)
+				a := bilinearInterpolate(float64(a00), float64(a10), float64(a01), float64(a11), fracX, fracY)
+
+				// Convert back to 8-bit and set pixel
+				interpolated := color.RGBA64{
+					R: uint16(r),
+					G: uint16(g),
+					B: uint16(b),
+					A: uint16(a),
+				}
+				resized.Set(offsetX+x, offsetY+y, interpolated)
 			}
 		}
 	}
@@ -290,6 +333,15 @@ func addRoundedCorners(img image.Image, radius int) image.Image {
 	}
 
 	return rounded
+}
+
+func bilinearInterpolate(c00, c10, c01, c11, fracX, fracY float64) float64 {
+	// Interpolate along X axis
+	top := c00*(1-fracX) + c10*fracX
+	bottom := c01*(1-fracX) + c11*fracX
+
+	// Interpolate along Y axis
+	return top*(1-fracY) + bottom*fracY
 }
 
 func shouldKeepPixel(x, y, size, radius int) bool {
