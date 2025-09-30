@@ -14,12 +14,14 @@ import (
 )
 
 type Config struct {
-	InputPath     string
-	OutputDir     string
-	Clean         bool
-	CropEnabled   bool
-	TrimPercent   int
-	RadiusPercent int
+	InputPath        string
+	OutputDir        string
+	Clean            bool
+	CropEnabled      bool
+	TrimPercent      int
+	RadiusPercent    int
+	PaddingPercent   int
+	PaddingIOSMode   bool
 }
 
 type IconSize struct {
@@ -66,6 +68,8 @@ func parseFlags() Config {
 	flag.BoolVar(&config.CropEnabled, "crop", true, "Enable center cropping")
 	flag.IntVar(&config.TrimPercent, "trim-percent", 80, "Percentage of image to keep when cropping (1-100)")
 	flag.IntVar(&config.RadiusPercent, "radius-percent", 20, "Corner radius as percentage of size for rounded variants")
+	flag.IntVar(&config.PaddingPercent, "padding-percent", 0, "Padding as percentage of image size (0-50)")
+	flag.BoolVar(&config.PaddingIOSMode, "padding-ios-mode", false, "iOS-compliant padding: exclude base icon_1024x1024.png from padding")
 
 	// Handle --no-crop flag
 	noCrop := flag.Bool("no-crop", false, "Disable center cropping")
@@ -79,6 +83,8 @@ func parseFlags() Config {
 		fmt.Fprintf(os.Stderr, "  %s app-icon.png\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --clean --trim-percent=75 source.png icons/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --no-crop logo.png\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --padding-percent=15 --padding-ios-mode source.png  # iOS: base 1024x1024 stays full size\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --padding-percent=10 source.png  # All sizes get padding\n", os.Args[0])
 	}
 
 	flag.Parse()
@@ -116,6 +122,10 @@ func validateConfig(config Config) error {
 
 	if config.RadiusPercent < 0 || config.RadiusPercent > 50 {
 		return fmt.Errorf("radius percent must be between 0 and 50 (got %d)", config.RadiusPercent)
+	}
+
+	if config.PaddingPercent < 0 || config.PaddingPercent > 50 {
+		return fmt.Errorf("padding percent must be between 0 and 50 (got %d)", config.PaddingPercent)
 	}
 
 	return nil
@@ -159,9 +169,19 @@ func generateIcons(config Config) error {
 		// Resize image
 		resized := resizeImage(sourceImg, iconSize.Size)
 
+		// Apply padding if specified
+		processed := resized
+		shouldApplyPadding := config.PaddingPercent > 0
+		if config.PaddingIOSMode && iconSize.Name == "icon_1024x1024.png" {
+			shouldApplyPadding = false // iOS mode: exclude base 1024x1024 icon only
+		}
+		if shouldApplyPadding {
+			processed = addPadding(resized, config.PaddingPercent, iconSize.Size)
+		}
+
 		// Save regular version
 		outputPath := filepath.Join(config.OutputDir, iconSize.Name)
-		if err := saveImage(resized, outputPath); err != nil {
+		if err := saveImage(processed, outputPath); err != nil {
 			return fmt.Errorf("failed to save %s: %w", iconSize.Name, err)
 		}
 
@@ -172,8 +192,19 @@ func generateIcons(config Config) error {
 			fmt.Printf(" - %s (%dx%d, r=%d)\n", roundedName, iconSize.Size, iconSize.Size, radius)
 
 			rounded := addRoundedCorners(resized, radius)
+
+			// Apply padding to rounded version if specified
+			processedRounded := rounded
+			shouldApplyPaddingRounded := config.PaddingPercent > 0
+			if config.PaddingIOSMode && iconSize.Name == "icon_1024x1024.png" {
+				shouldApplyPaddingRounded = false // iOS mode: exclude base 1024x1024 icon only
+			}
+			if shouldApplyPaddingRounded {
+				processedRounded = addPadding(rounded, config.PaddingPercent, iconSize.Size)
+			}
+
 			roundedPath := filepath.Join(config.OutputDir, roundedName)
-			if err := saveImage(rounded, roundedPath); err != nil {
+			if err := saveImage(processedRounded, roundedPath); err != nil {
 				return fmt.Errorf("failed to save %s: %w", roundedName, err)
 			}
 		}
@@ -342,6 +373,37 @@ func bilinearInterpolate(c00, c10, c01, c11, fracX, fracY float64) float64 {
 
 	// Interpolate along Y axis
 	return top*(1-fracY) + bottom*fracY
+}
+
+func addPadding(img image.Image, paddingPercent int, targetSize int) image.Image {
+	if paddingPercent <= 0 {
+		return img
+	}
+
+	bounds := img.Bounds()
+	currentSize := bounds.Dx() // Assuming square image
+
+	// Calculate padding size
+	paddingSize := currentSize * paddingPercent / 100
+	paddedSize := currentSize + (paddingSize * 2)
+
+	// Create new image with padding
+	padded := image.NewRGBA(image.Rect(0, 0, paddedSize, paddedSize))
+
+	// Fill with transparent background
+	transparent := &image.Uniform{color.RGBA{0, 0, 0, 0}}
+	draw.Draw(padded, padded.Bounds(), transparent, image.Point{}, draw.Src)
+
+	// Center the original image in the padded canvas
+	offsetX := paddingSize
+	offsetY := paddingSize
+	dstRect := image.Rect(offsetX, offsetY, offsetX+currentSize, offsetY+currentSize)
+	draw.Draw(padded, dstRect, img, bounds.Min, draw.Src)
+
+	// Resize the padded image back to target size
+	resizedPadded := resizeImage(padded, targetSize)
+
+	return resizedPadded
 }
 
 func shouldKeepPixel(x, y, size, radius int) bool {

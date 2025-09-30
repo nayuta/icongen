@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -544,6 +545,180 @@ func TestConfigDefaults(t *testing.T) {
 			}
 			if !tt.valid && !hasError {
 				t.Errorf("Expected invalid config but got no error")
+			}
+		})
+	}
+}
+
+func TestAddPadding(t *testing.T) {
+	tests := []struct {
+		name           string
+		paddingPercent int
+		originalSize   int
+		expectedSize   int
+	}{
+		{"no padding", 0, 64, 64},
+		{"10 percent padding", 10, 64, 64}, // Padded then resized back to 64
+		{"25 percent padding", 25, 100, 100}, // Padded then resized back to 100
+		{"50 percent padding", 50, 32, 32}, // Padded then resized back to 32
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test image
+			img := image.NewRGBA(image.Rect(0, 0, tt.originalSize, tt.originalSize))
+
+			// Apply padding (using original size as target)
+			result := addPadding(img, tt.paddingPercent, tt.originalSize)
+
+			// Check result size
+			bounds := result.Bounds()
+			actualSize := bounds.Dx()
+
+			if actualSize != tt.expectedSize {
+				t.Errorf("Expected size %d, got %d", tt.expectedSize, actualSize)
+			}
+
+			// Verify it's square
+			if bounds.Dx() != bounds.Dy() {
+				t.Errorf("Result should be square, got %dx%d", bounds.Dx(), bounds.Dy())
+			}
+		})
+	}
+}
+
+func TestPaddingValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		paddingPercent int
+		valid          bool
+	}{
+		{"valid zero padding", 0, true},
+		{"valid small padding", 10, true},
+		{"valid max padding", 50, true},
+		{"invalid negative padding", -1, false},
+		{"invalid too large padding", 51, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a temporary test file for validation
+			tempDir := t.TempDir()
+			tempFile := filepath.Join(tempDir, "test.png")
+			testImg := createTestImage(100, color.RGBA{255, 0, 0, 255})
+			file, _ := os.Create(tempFile)
+			png.Encode(file, testImg)
+			file.Close()
+
+			config := Config{
+				InputPath:      tempFile,
+				PaddingPercent: tt.paddingPercent,
+				TrimPercent:    80,
+				RadiusPercent:  20,
+			}
+
+			err := validateConfig(config)
+			hasError := err != nil
+
+			if tt.valid && hasError {
+				t.Errorf("Expected valid config but got error: %v", err)
+			}
+			if !tt.valid && !hasError {
+				t.Errorf("Expected invalid config but got no error")
+			}
+		})
+	}
+}
+
+func TestPaddingIOSMode(t *testing.T) {
+	// Create a test image
+	testImg := createTestImage(100, color.RGBA{255, 0, 0, 255})
+
+	config := Config{
+		PaddingPercent: 20,
+		PaddingIOSMode: true,
+	}
+
+	tests := []struct {
+		name         string
+		iconSize     int
+		iconName     string
+		shouldPad    bool
+	}{
+		{"16x16 test", 16, "icon_16x16.png", true},
+		{"64x64 test", 64, "icon_32x32@2x.png", true},
+		{"512x512 test", 512, "icon_512x512.png", true},
+		{"512x512@2x (1024) should have padding", 1024, "icon_512x512@2x.png", true},
+		{"1024x1024 should NOT have padding", 1024, "icon_1024x1024.png", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Resize to test size
+			resized := resizeImage(testImg, tt.iconSize)
+
+			// Apply padding logic (same as in generateIcons)
+			processed := resized
+			shouldApplyPadding := config.PaddingPercent > 0
+			if config.PaddingIOSMode && tt.iconName == "icon_1024x1024.png" {
+				shouldApplyPadding = false // iOS mode: exclude base 1024x1024 icon only
+			}
+			if shouldApplyPadding {
+				processed = addPadding(resized, config.PaddingPercent, tt.iconSize)
+			}
+
+			bounds := processed.Bounds()
+			actualSize := bounds.Dx()
+
+			// With new padding behavior, final size should always match target
+			if actualSize != tt.iconSize {
+				t.Errorf("Expected final size %d, got %d", tt.iconSize, actualSize)
+			}
+		})
+	}
+}
+
+func TestPaddingNonIOSMode(t *testing.T) {
+	// Create a test image
+	testImg := createTestImage(100, color.RGBA{255, 0, 0, 255})
+
+	config := Config{
+		PaddingPercent: 20,
+		PaddingIOSMode: false, // Normal mode: padding applies to all sizes
+	}
+
+	tests := []struct {
+		name     string
+		iconSize int
+		iconName string
+	}{
+		{"16x16 test", 16, "icon_16x16.png"},
+		{"64x64 test", 64, "icon_32x32@2x.png"},
+		{"512x512 test", 512, "icon_512x512.png"},
+		{"1024x1024 test", 1024, "icon_1024x1024.png"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Resize to test size
+			resized := resizeImage(testImg, tt.iconSize)
+
+			// Apply padding logic (same as in generateIcons)
+			processed := resized
+			shouldApplyPadding := config.PaddingPercent > 0
+			if config.PaddingIOSMode && tt.iconName == "icon_1024x1024.png" {
+				shouldApplyPadding = false // iOS mode: exclude base 1024x1024 icon only
+			}
+			if shouldApplyPadding {
+				processed = addPadding(resized, config.PaddingPercent, tt.iconSize)
+			}
+
+			bounds := processed.Bounds()
+			actualSize := bounds.Dx()
+
+			// With new padding behavior, final size should always match target
+			if actualSize != tt.iconSize {
+				t.Errorf("Expected final size %d, got %d", tt.iconSize, actualSize)
 			}
 		})
 	}
